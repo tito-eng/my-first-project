@@ -1,216 +1,419 @@
-/* ── Animated background (canvas particles) ── */
-const canvas = document.getElementById('bg-canvas');
-const ctx = canvas.getContext('2d');
-let W, H, particles = [];
+/* ============================================================
+   Pet Memorial App — Main Logic
+   ============================================================ */
 
-function resizeCanvas() {
-  W = canvas.width  = window.innerWidth;
-  H = canvas.height = window.innerHeight;
-}
+const DB_NAME    = "petMemorialDB";
+const DB_VER     = 1;
+const STORE_NAME = "photos";
 
-class Particle {
-  constructor() { this.reset(true); }
-  reset(init) {
-    this.x  = Math.random() * W;
-    this.y  = init ? Math.random() * H : H + 10;
-    this.r  = Math.random() * 1.5 + 0.3;
-    this.vy = -(Math.random() * 0.4 + 0.15);
-    this.vx = (Math.random() - 0.5) * 0.2;
-    this.alpha = Math.random() * 0.5 + 0.1;
-    const hues = [260, 200, 320];
-    this.hue = hues[Math.floor(Math.random() * hues.length)];
-  }
-  update() {
-    this.x += this.vx; this.y += this.vy;
-    if (this.y < -10) this.reset(false);
-  }
-  draw() {
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
-    ctx.fillStyle = `hsla(${this.hue},80%,70%,${this.alpha})`;
-    ctx.fill();
-  }
-}
+let db          = null;
+let settings    = {};
+let chatHistory = [];
+let currentDeleteId = null;
 
-function initParticles() {
-  particles = Array.from({length: 120}, () => new Particle());
-}
-
-function animateBg() {
-  ctx.clearRect(0, 0, W, H);
-  particles.forEach(p => { p.update(); p.draw(); });
-  requestAnimationFrame(animateBg);
-}
-
-window.addEventListener('resize', () => { resizeCanvas(); initParticles(); });
-resizeCanvas(); initParticles(); animateBg();
-
-/* ── DOM refs ── */
-const alarmTimeInput  = document.getElementById('alarm-time');
-const setBtn          = document.getElementById('set-btn');
-const alarmListEl     = document.getElementById('alarm-list');
-const emptyState      = document.getElementById('empty-state');
-const alarmCountLabel = document.getElementById('alarm-count-label');
-const ringingOverlay  = document.getElementById('ringing-overlay');
-const ringingTimeLabel= document.getElementById('ringing-time-label');
-const dismissBtn      = document.getElementById('dismiss-btn');
-const dateLabel       = document.getElementById('date-label');
-const periodLabel     = document.getElementById('period-label');
-const secBar          = document.getElementById('sec-bar');
-
-/* ── flip digit elements ── */
-const flipEls = {
-  h1: document.querySelector('#flip-h1 .flip-digit'),
-  h2: document.querySelector('#flip-h2 .flip-digit'),
-  m1: document.querySelector('#flip-m1 .flip-digit'),
-  m2: document.querySelector('#flip-m2 .flip-digit'),
-  s1: document.querySelector('#flip-s1 .flip-digit'),
-  s2: document.querySelector('#flip-s2 .flip-digit'),
-};
-
-const DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
-const pad = n => String(n).padStart(2, '0');
-
-let prevDigits = {};
-function setFlip(key, val) {
-  const ch = String(val);
-  if (prevDigits[key] === ch) return;
-  prevDigits[key] = ch;
-  const el = flipEls[key];
-  el.classList.remove('flipping');
-  void el.offsetWidth;
-  el.textContent = ch;
-  el.classList.add('flipping');
-}
-
-/* ── State ── */
-let alarms = [];
-let ringingId = null;
-let audioCtx = null;
-let beepInterval = null;
-
-/* ── Clock tick ── */
-function tick() {
-  const now = new Date();
-  const h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
-  const hh = pad(h), mm = pad(m), ss = pad(s);
-
-  setFlip('h1', hh[0]); setFlip('h2', hh[1]);
-  setFlip('m1', mm[0]); setFlip('m2', mm[1]);
-  setFlip('s1', ss[0]); setFlip('s2', ss[1]);
-
-  secBar.style.width = (s / 59 * 100) + '%';
-
-  const day = DAYS[now.getDay()];
-  dateLabel.textContent = `${now.getFullYear()}.${pad(now.getMonth()+1)}.${pad(now.getDate())} ${day}`;
-  periodLabel.textContent = h < 12 ? 'AM' : 'PM';
-
-  const hhmm = `${hh}:${mm}`;
-  alarms.forEach(a => {
-    if (!a.triggered && a.time === hhmm) {
-      a.triggered = true;
-      triggerAlarm(a.id);
-    }
+// ============================================================
+// IndexedDB
+// ============================================================
+function initDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => { db = req.result; resolve(); };
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains(STORE_NAME)) {
+        d.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+      }
+    };
   });
 }
 
-/* ── Alarm management ── */
-function renderAlarms() {
-  alarmListEl.innerHTML = '';
-  const count = alarms.length;
-  emptyState.style.display = count === 0 ? 'flex' : 'none';
-  alarmCountLabel.textContent = count === 0 ? 'アラームなし' : `${count}件セット中`;
-
-  alarms.forEach(a => {
-    const el = document.createElement('div');
-    el.className = 'alarm-item' + (a.id === ringingId ? ' ringing' : '');
-    el.innerHTML = `
-      <div class="alarm-item-left">
-        <div class="alarm-indicator"></div>
-        <span class="alarm-time">${a.time}</span>
-      </div>
-      <div class="alarm-item-right">
-        <span class="alarm-tag">${a.triggered ? 'DONE' : 'ACTIVE'}</span>
-        <button class="del-btn" aria-label="削除">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>`;
-    el.querySelector('.del-btn').addEventListener('click', () => deleteAlarm(a.id));
-    alarmListEl.appendChild(el);
+function dbGetAll() {
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
   });
 }
 
-function addAlarm(time) {
-  if (alarms.some(a => a.time === time)) {
-    alarmTimeInput.style.borderBottomColor = '#f87171';
-    setTimeout(() => (alarmTimeInput.style.borderBottomColor = ''), 700);
+function dbAdd(blob, name) {
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE_NAME, "readwrite");
+    const req = tx.objectStore(STORE_NAME).add({ blob, name, addedAt: Date.now() });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+function dbDelete(id) {
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(STORE_NAME, "readwrite");
+    const req = tx.objectStore(STORE_NAME).delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+// ============================================================
+// Settings
+// ============================================================
+function loadSettings() {
+  try { settings = JSON.parse(localStorage.getItem("pm_settings") || "{}"); }
+  catch { settings = {}; }
+}
+function saveSettings(patch) {
+  settings = { ...settings, ...patch };
+  localStorage.setItem("pm_settings", JSON.stringify(settings));
+}
+
+// ============================================================
+// Utilities
+// ============================================================
+function todayKey() { return new Date().toISOString().slice(0, 10); }
+
+function formatDate() {
+  const d    = new Date();
+  const days = ["日", "月", "火", "水", "木", "金", "土"];
+  return `${d.getMonth() + 1}月${d.getDate()}日（${days[d.getDay()]}）`;
+}
+
+function dayOfWeek() {
+  return ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"][new Date().getDay()];
+}
+
+function escHtml(str) {
+  return str
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function blobUrl(blob) { return URL.createObjectURL(blob); }
+
+// ============================================================
+// Weather
+// ============================================================
+async function fetchWeather() {
+  if (!settings.location) return null;
+  try {
+    const res = await fetch(`/api/weather?location=${encodeURIComponent(settings.location)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+// ============================================================
+// Daily Message (cached per day)
+// ============================================================
+async function getDailyMessage(weather) {
+  const key    = "pm_daily";
+  const cached = (() => { try { return JSON.parse(localStorage.getItem(key) || "{}"); } catch { return {}; } })();
+  if (cached.date === todayKey() && cached.message) return cached.message;
+
+  try {
+    const weatherStr = weather ? `${weather.icon} ${weather.description} ${weather.temp}℃` : "";
+    const res = await fetch("/api/daily", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dogName:   settings.dogName,
+        ownerName: settings.ownerName || "パパ",
+        weather:   weatherStr,
+        date:      `${new Date().getMonth() + 1}月${new Date().getDate()}日`,
+        dayOfWeek: dayOfWeek(),
+      }),
+    });
+    if (!res.ok) throw new Error();
+    const { message } = await res.json();
+    localStorage.setItem(key, JSON.stringify({ date: todayKey(), message }));
+    return message;
+  } catch {
+    return `今日も元気でいてね！${settings.dogName || "ぼく"}は天国からいつも見ているよ。大好きだワン！🐾`;
+  }
+}
+
+// ============================================================
+// Home Screen
+// ============================================================
+async function loadHome() {
+  document.getElementById("header-date").textContent = formatDate();
+
+  const weather = await fetchWeather();
+  if (weather) {
+    document.getElementById("weather-icon").textContent = weather.icon;
+    document.getElementById("weather-temp").textContent = `${weather.temp}℃`;
+  }
+
+  const photos = await dbGetAll();
+  const photoEl      = document.getElementById("daily-photo");
+  const placeholder  = document.getElementById("photo-placeholder");
+
+  if (photos.length > 0) {
+    const seed  = todayKey().replace(/-/g, "").split("").reduce((a, c) => a + parseInt(c), 0);
+    const photo = photos[seed % photos.length];
+    photoEl.src = blobUrl(photo.blob);
+    photoEl.classList.remove("hidden");
+    placeholder.classList.add("hidden");
+  } else {
+    photoEl.classList.add("hidden");
+    placeholder.classList.remove("hidden");
+  }
+
+  document.getElementById("bubble-dog-name").textContent =
+    `${settings.dogName || "わんちゃん"} より`;
+
+  const msgEl = document.getElementById("daily-message");
+  msgEl.innerHTML = '<span class="dot-loading">考え中<span>.</span><span>.</span><span>.</span></span>';
+  const msg = await getDailyMessage(weather);
+  msgEl.textContent = msg;
+}
+
+// ============================================================
+// Album Screen
+// ============================================================
+async function renderAlbum() {
+  const grid  = document.getElementById("photo-grid");
+  const empty = document.getElementById("album-empty");
+  const photos = (await dbGetAll()).sort((a, b) => b.addedAt - a.addedAt);
+
+  grid.innerHTML = "";
+
+  if (photos.length === 0) {
+    grid.classList.add("hidden");
+    empty.classList.remove("hidden");
     return;
   }
-  const now = new Date();
-  const hhmm = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-  alarms.push({ id: Date.now(), time, triggered: time <= hhmm });
-  alarms.sort((a,b) => a.time.localeCompare(b.time));
-  renderAlarms();
-}
+  grid.classList.remove("hidden");
+  empty.classList.add("hidden");
 
-function deleteAlarm(id) {
-  alarms = alarms.filter(a => a.id !== id);
-  if (ringingId === id) stopRinging();
-  renderAlarms();
-}
-
-function triggerAlarm(id) {
-  ringingId = id;
-  const a = alarms.find(x => x.id === id);
-  ringingTimeLabel.textContent = a ? a.time : '';
-  ringingOverlay.classList.remove('hidden');
-  renderAlarms();
-  startBeep();
-}
-
-function stopRinging() {
-  ringingId = null;
-  ringingOverlay.classList.add('hidden');
-  stopBeep();
-  renderAlarms();
-}
-
-/* ── Audio ── */
-function startBeep() {
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  function beep() {
-    [[0, 880], [0.15, 1108]].forEach(([delay, freq]) => {
-      const o = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      o.connect(g); g.connect(audioCtx.destination);
-      o.type = 'sine';
-      o.frequency.setValueAtTime(freq, audioCtx.currentTime + delay);
-      g.gain.setValueAtTime(0.22, audioCtx.currentTime + delay);
-      g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + delay + 0.4);
-      o.start(audioCtx.currentTime + delay);
-      o.stop(audioCtx.currentTime + delay + 0.45);
-    });
+  for (const photo of photos) {
+    const item = document.createElement("div");
+    item.className = "photo-item";
+    const img = document.createElement("img");
+    img.src     = blobUrl(photo.blob);
+    img.alt     = photo.name || "写真";
+    img.loading = "lazy";
+    item.appendChild(img);
+    item.addEventListener("click", () => openPhotoModal(photo));
+    grid.appendChild(item);
   }
-  beep();
-  beepInterval = setInterval(beep, 1100);
 }
 
-function stopBeep() {
-  clearInterval(beepInterval); beepInterval = null;
-  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+function openPhotoModal(photo) {
+  currentDeleteId = photo.id;
+  document.getElementById("modal-img").src = blobUrl(photo.blob);
+  document.getElementById("photo-modal").classList.remove("hidden");
 }
 
-/* ── Events ── */
-setBtn.addEventListener('click', () => {
-  if (!alarmTimeInput.value) return;
-  addAlarm(alarmTimeInput.value);
-  alarmTimeInput.value = '';
-});
+// ============================================================
+// Chat Screen
+// ============================================================
+function initChat() {
+  const name = settings.dogName || "わんちゃん";
+  document.getElementById("chat-title").textContent   = `${name}とおしゃべり`;
+  document.getElementById("welcome-text").textContent =
+    `ワン！ぼく${name}だよ！天国からいつも見ているよ。何でも話しかけてね 🐾`;
+}
 
-alarmTimeInput.addEventListener('keydown', e => { if (e.key === 'Enter') setBtn.click(); });
-dismissBtn.addEventListener('click', () => { if (ringingId !== null) deleteAlarm(ringingId); stopRinging(); });
+function appendMsg(role, text) {
+  const container = document.getElementById("chat-messages");
+  const row = document.createElement("div");
+  row.className = `msg-row ${role === "user" ? "from-user" : "from-dog"}`;
 
-/* ── Start ── */
-setInterval(tick, 1000);
-tick();
-renderAlarms();
+  if (role === "assistant") {
+    row.innerHTML = `<div class="msg-avatar">🐾</div><div class="msg-bubble">${escHtml(text)}</div>`;
+  } else {
+    row.innerHTML = `<div class="msg-bubble">${escHtml(text)}</div>`;
+  }
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+  return row;
+}
+
+function showTyping() {
+  const container = document.getElementById("chat-messages");
+  const row = document.createElement("div");
+  row.className = "msg-row from-dog typing-row";
+  row.innerHTML = `<div class="msg-avatar">🐾</div><div class="msg-bubble"><span class="typing-indicator"><span></span><span></span><span></span></span></div>`;
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+  return row;
+}
+
+async function sendMessage() {
+  const input = document.getElementById("chat-input");
+  const btn   = document.getElementById("send-btn");
+  const text  = input.value.trim();
+  if (!text) return;
+
+  input.value    = "";
+  input.disabled = true;
+  btn.disabled   = true;
+
+  appendMsg("user", text);
+  chatHistory.push({ role: "user", content: text });
+
+  const typingRow = showTyping();
+
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: text,
+        dogName: settings.dogName || "わんちゃん",
+        history: chatHistory.slice(-20),
+      }),
+    });
+    const data = await res.json();
+    const reply = data.reply || "ちょっと天国の通信が悪いみたい…もう一度話しかけて！";
+    typingRow.remove();
+    appendMsg("assistant", reply);
+    chatHistory.push({ role: "assistant", content: reply });
+  } catch {
+    typingRow.remove();
+    appendMsg("assistant", "ちょっと天国の通信が悪いみたい…もう一度話しかけてワン！");
+  }
+
+  input.disabled = false;
+  btn.disabled   = false;
+  input.focus();
+}
+
+// ============================================================
+// Screen Navigation
+// ============================================================
+let chatInited = false;
+
+function switchScreen(name) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.add("hidden"));
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById(`${name}-screen`).classList.remove("hidden");
+  document.querySelector(`[data-screen="${name}"]`).classList.add("active");
+
+  if (name === "home")  loadHome();
+  if (name === "album") renderAlbum();
+  if (name === "chat" && !chatInited) { initChat(); chatInited = true; }
+}
+
+// ============================================================
+// Setup / Main toggle
+// ============================================================
+function showSetup() {
+  document.getElementById("setup-screen").classList.remove("hidden");
+  document.getElementById("main-app").classList.add("hidden");
+}
+function showMain() {
+  document.getElementById("setup-screen").classList.add("hidden");
+  document.getElementById("main-app").classList.remove("hidden");
+}
+
+// ============================================================
+// Event Listeners
+// ============================================================
+function bindEvents() {
+  // Setup form
+  document.getElementById("setup-btn").addEventListener("click", () => {
+    const dogName   = document.getElementById("dog-name-input").value.trim();
+    const ownerName = document.getElementById("owner-name-input").value.trim();
+    const location  = document.getElementById("location-input").value.trim();
+    if (!dogName) { alert("わんちゃんのお名前を入力してください"); return; }
+    saveSettings({ dogName, ownerName, location, ready: true });
+    showMain();
+    loadHome();
+  });
+
+  // Bottom nav
+  document.querySelectorAll(".nav-btn").forEach(btn =>
+    btn.addEventListener("click", () => switchScreen(btn.dataset.screen))
+  );
+
+  // Add photo buttons
+  const fileInput = document.getElementById("file-input");
+  const triggerPick = () => fileInput.click();
+  document.getElementById("add-photo-btn").addEventListener("click", triggerPick);
+  document.getElementById("add-first-btn").addEventListener("click", triggerPick);
+
+  fileInput.addEventListener("change", async e => {
+    const files = Array.from(e.target.files);
+    for (const file of files) await dbAdd(file, file.name);
+    fileInput.value = "";
+    await renderAlbum();
+  });
+
+  // Photo modal
+  document.getElementById("modal-close").addEventListener("click", () =>
+    document.getElementById("photo-modal").classList.add("hidden")
+  );
+  document.getElementById("modal-backdrop").addEventListener("click", () =>
+    document.getElementById("photo-modal").classList.add("hidden")
+  );
+  document.getElementById("modal-delete-btn").addEventListener("click", async () => {
+    if (!confirm("この写真を削除しますか？")) return;
+    await dbDelete(currentDeleteId);
+    document.getElementById("photo-modal").classList.add("hidden");
+    await renderAlbum();
+  });
+
+  // Refresh daily message
+  document.getElementById("refresh-btn").addEventListener("click", async () => {
+    localStorage.removeItem("pm_daily");
+    const msgEl = document.getElementById("daily-message");
+    msgEl.innerHTML = '<span class="dot-loading">考え中<span>.</span><span>.</span><span>.</span></span>';
+    const weather = await fetchWeather();
+    msgEl.textContent = await getDailyMessage(weather);
+  });
+
+  // Chat
+  document.getElementById("send-btn").addEventListener("click", sendMessage);
+  document.getElementById("chat-input").addEventListener("keypress", e => {
+    if (e.key === "Enter") sendMessage();
+  });
+
+  // Settings modal open
+  document.getElementById("settings-btn").addEventListener("click", () => {
+    document.getElementById("settings-dog-name").value   = settings.dogName   || "";
+    document.getElementById("settings-owner-name").value = settings.ownerName || "";
+    document.getElementById("settings-location").value   = settings.location  || "";
+    document.getElementById("settings-modal").classList.remove("hidden");
+  });
+
+  // Settings save
+  document.getElementById("settings-save-btn").addEventListener("click", () => {
+    const dogName   = document.getElementById("settings-dog-name").value.trim();
+    const ownerName = document.getElementById("settings-owner-name").value.trim();
+    const location  = document.getElementById("settings-location").value.trim();
+    if (!dogName) { alert("お名前を入力してください"); return; }
+    saveSettings({ dogName, ownerName, location });
+    localStorage.removeItem("pm_daily");
+    document.getElementById("settings-modal").classList.add("hidden");
+    chatInited = false;
+    loadHome();
+  });
+
+  // Settings cancel
+  document.getElementById("settings-cancel-btn").addEventListener("click", () =>
+    document.getElementById("settings-modal").classList.add("hidden")
+  );
+  document.getElementById("settings-backdrop").addEventListener("click", () =>
+    document.getElementById("settings-modal").classList.add("hidden")
+  );
+}
+
+// ============================================================
+// Init
+// ============================================================
+async function init() {
+  await initDB();
+  loadSettings();
+  bindEvents();
+
+  if (settings.ready) {
+    showMain();
+    await loadHome();
+  } else {
+    showSetup();
+  }
+}
+
+init().catch(console.error);

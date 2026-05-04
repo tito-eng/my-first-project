@@ -2,113 +2,186 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ALARM CLOCK</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+  <title>わんちゃんメモリアル</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap"/>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
 
-  <!-- Animated background -->
-  <canvas id="bg-canvas"></canvas>
-  <div class="noise"></div>
-
-  <div class="app">
-
-    <!-- Header -->
-    <header class="header">
-      <div class="header-logo">
-        <span class="logo-dot"></span>
-        ALARM CLOCK
-      </div>
-      <div class="header-status">
-        <span class="status-dot"></span>
-        <span id="alarm-count-label">アラームなし</span>
-      </div>
-    </header>
-
-    <!-- Clock -->
-    <section class="clock-wrap">
-      <div class="clock-card">
-        <div class="clock-bg-blur"></div>
-
-        <div class="flip-clock" id="flip-clock">
-          <div class="flip-group" id="flip-h1"><div class="flip-digit">0</div></div>
-          <div class="flip-group" id="flip-h2"><div class="flip-digit">0</div></div>
-          <div class="flip-sep">:</div>
-          <div class="flip-group" id="flip-m1"><div class="flip-digit">0</div></div>
-          <div class="flip-group" id="flip-m2"><div class="flip-digit">0</div></div>
-          <div class="flip-sep">:</div>
-          <div class="flip-group" id="flip-s1"><div class="flip-digit">0</div></div>
-          <div class="flip-group" id="flip-s2"><div class="flip-digit">0</div></div>
+  <!-- Setup Screen -->
+  <div id="setup-screen" class="setup-screen">
+    <div class="setup-content">
+      <div class="setup-paw">🐾</div>
+      <h1 class="setup-title">わんちゃんメモリアル</h1>
+      <p class="setup-subtitle">大切なわんちゃんとの思い出を<br>いつまでも</p>
+      <div class="setup-card">
+        <div class="form-group">
+          <label>わんちゃんのお名前 *</label>
+          <input type="text" id="dog-name-input" placeholder="例：ポチ、ハナ、モモ..." maxlength="20"/>
         </div>
-
-        <div class="clock-sub">
-          <span id="date-label"></span>
-          <span class="clock-sub-sep">|</span>
-          <span id="period-label"></span>
+        <div class="form-group">
+          <label>あなたのお名前（パパ）</label>
+          <input type="text" id="owner-name-input" placeholder="例：たろう" maxlength="20"/>
         </div>
-
-        <!-- Progress bar for seconds -->
-        <div class="sec-bar-wrap">
-          <div class="sec-bar" id="sec-bar"></div>
+        <div class="form-group">
+          <label>お住まいの地域（天気予報用）</label>
+          <input type="text" id="location-input" placeholder="例：Tokyo, Osaka, Sapporo" maxlength="30"/>
         </div>
+        <button id="setup-btn" class="primary-btn">はじめる 🐾</button>
       </div>
-    </section>
+    </div>
+  </div>
 
-    <!-- Add alarm -->
-    <section class="add-section">
-      <div class="add-card">
-        <div class="add-card-label">NEW ALARM</div>
-        <div class="add-row">
-          <div class="time-input-wrap">
-            <input type="time" id="alarm-time" class="time-input"/>
-            <div class="time-input-line"></div>
+  <!-- Main App -->
+  <div id="main-app" class="main-app hidden">
+
+    <div class="screens-container">
+
+      <!-- Home Screen -->
+      <div id="home-screen" class="screen">
+        <header class="app-header">
+          <div class="header-left">
+            <div id="header-date" class="header-date">読み込み中...</div>
+            <div id="header-weather" class="header-weather">
+              <span id="weather-icon">—</span>
+              <span id="weather-temp"></span>
+            </div>
           </div>
-          <button id="set-btn" class="set-btn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <button class="icon-btn" id="settings-btn" aria-label="設定">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+        </header>
+
+        <div class="home-content">
+          <div class="photo-card">
+            <div class="photo-frame">
+              <img id="daily-photo" src="" alt="今日の一枚" class="daily-photo hidden"/>
+              <div class="photo-placeholder" id="photo-placeholder">
+                <span>📷</span>
+                <p>アルバムに写真を<br>追加してください</p>
+              </div>
+            </div>
+
+            <div class="speech-bubble">
+              <div class="bubble-paw">🐾</div>
+              <div class="bubble-body">
+                <div class="bubble-name" id="bubble-dog-name">わんちゃん より</div>
+                <p id="daily-message" class="bubble-text">
+                  <span class="dot-loading">読み込み中<span>.</span><span>.</span><span>.</span></span>
+                </p>
+              </div>
+            </div>
+
+            <button id="refresh-btn" class="refresh-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              別のメッセージを見る
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Album Screen -->
+      <div id="album-screen" class="screen hidden">
+        <header class="app-header">
+          <h2 class="screen-title">思い出アルバム</h2>
+          <button id="add-photo-btn" class="add-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             追加
+          </button>
+        </header>
+
+        <div class="album-content">
+          <div id="photo-grid" class="photo-grid"></div>
+          <div id="album-empty" class="album-empty">
+            <div class="empty-icon">📸</div>
+            <p>思い出の写真を追加しましょう</p>
+            <button id="add-first-btn" class="primary-btn">写真を追加する</button>
+          </div>
+        </div>
+
+        <input type="file" id="file-input" accept="image/*" multiple class="hidden"/>
+      </div>
+
+      <!-- Chat Screen -->
+      <div id="chat-screen" class="screen hidden">
+        <header class="app-header">
+          <h2 class="screen-title" id="chat-title">おしゃべり</h2>
+        </header>
+
+        <div id="chat-messages" class="chat-messages">
+          <div class="chat-welcome">
+            <div class="welcome-paw">🐾</div>
+            <div class="welcome-bubble">
+              <p id="welcome-text">読み込み中...</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-bar">
+          <input type="text" id="chat-input" placeholder="メッセージを入力..." class="chat-input" maxlength="200"/>
+          <button id="send-btn" class="send-btn" aria-label="送信">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
         </div>
       </div>
-    </section>
 
-    <!-- Alarm list -->
-    <section class="list-section">
-      <div id="alarm-list"></div>
-      <div id="empty-state" class="empty-state">
-        <div class="empty-icon">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        </div>
-        <p>アラームをセットしてください</p>
-      </div>
-    </section>
+    </div>
+
+    <!-- Bottom Nav -->
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-screen="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>ホーム</span>
+      </button>
+      <button class="nav-btn" data-screen="album">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <span>アルバム</span>
+      </button>
+      <button class="nav-btn" data-screen="chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>おしゃべり</span>
+      </button>
+    </nav>
 
   </div>
 
-  <!-- Ringing overlay -->
-  <div id="ringing-overlay" class="ringing-overlay hidden">
-    <div class="ringing-card">
-      <div class="ringing-rings">
-        <div class="rr rr1"></div>
-        <div class="rr rr2"></div>
-        <div class="rr rr3"></div>
-        <div class="rr rr4"></div>
+  <!-- Photo Viewer Modal -->
+  <div id="photo-modal" class="modal hidden">
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <div class="modal-body">
+      <button class="modal-close" id="modal-close">✕</button>
+      <img id="modal-img" src="" alt=""/>
+      <div class="modal-footer">
+        <button id="modal-delete-btn" class="danger-btn">🗑 この写真を削除</button>
       </div>
-      <div class="ringing-bell">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-backdrop" id="settings-backdrop"></div>
+    <div class="modal-body settings-body">
+      <h3>⚙️ 設定</h3>
+      <div class="form-group">
+        <label>わんちゃんのお名前</label>
+        <input type="text" id="settings-dog-name" maxlength="20"/>
       </div>
-      <div class="ringing-label">ALARM</div>
-      <div class="ringing-time" id="ringing-time-label"></div>
-      <div class="ringing-waveform">
-        <span></span><span></span><span></span><span></span><span></span>
-        <span></span><span></span><span></span><span></span><span></span>
+      <div class="form-group">
+        <label>あなたのお名前（パパ）</label>
+        <input type="text" id="settings-owner-name" maxlength="20"/>
       </div>
-      <button id="dismiss-btn" class="dismiss-btn">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        止める
-      </button>
+      <div class="form-group">
+        <label>地域（天気予報用）</label>
+        <input type="text" id="settings-location" maxlength="30"/>
+      </div>
+      <div class="modal-actions">
+        <button id="settings-save-btn" class="primary-btn">保存</button>
+        <button id="settings-cancel-btn" class="ghost-btn">キャンセル</button>
+      </div>
     </div>
   </div>
 
