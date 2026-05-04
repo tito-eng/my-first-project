@@ -3,31 +3,64 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>シンプルアラーム</title>
+  <title>ALARM</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="container">
-    <h1>シンプルアラーム</h1>
+  <div class="bg-grid"></div>
+  <div class="glow-orb orb1"></div>
+  <div class="glow-orb orb2"></div>
 
-    <div class="clock">
-      <span id="current-time">--:--:--</span>
-    </div>
+  <main>
+    <header>
+      <div class="logo">⏰ ALARM</div>
+    </header>
 
-    <div class="alarm-form">
-      <label for="alarm-time">アラーム時刻</label>
-      <input type="time" id="alarm-time" />
-      <button id="set-btn">セット</button>
-    </div>
-
-    <div id="alarm-list" class="alarm-list"></div>
-
-    <div id="alert-overlay" class="alert-overlay hidden">
-      <div class="alert-box">
-        <div class="alert-icon">⏰</div>
-        <p>アラームの時間です！</p>
-        <button id="dismiss-btn">閉じる</button>
+    <section class="clock-section">
+      <div class="clock-ring">
+        <svg class="ring-svg" viewBox="0 0 200 200">
+          <circle class="ring-bg" cx="100" cy="100" r="90"/>
+          <circle class="ring-progress" id="ring-progress" cx="100" cy="100" r="90"/>
+        </svg>
+        <div class="clock-inner">
+          <div id="current-time" class="time-display">--:--:--</div>
+          <div id="current-date" class="date-display"></div>
+        </div>
       </div>
+    </section>
+
+    <section class="input-section">
+      <div class="input-card">
+        <label>アラーム時刻をセット</label>
+        <div class="input-row">
+          <input type="time" id="alarm-time" />
+          <button id="set-btn">
+            <span class="btn-icon">+</span>
+            <span>追加</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="alarm-section">
+      <div id="alarm-list" class="alarm-list">
+        <p class="empty-hint" id="empty-hint">アラームがありません</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Ringing Modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-rings">
+        <div class="ring r1"></div>
+        <div class="ring r2"></div>
+        <div class="ring r3"></div>
+      </div>
+      <div class="modal-icon">⏰</div>
+      <h2>アラーム！</h2>
+      <p id="modal-time" class="modal-time"></p>
+      <button id="dismiss-btn">止める</button>
     </div>
   </div>
 
